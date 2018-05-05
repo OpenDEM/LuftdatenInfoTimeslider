@@ -16,4 +16,4 @@ TODOS
   * Überschreitung von Werten pro Woche
   * Eigene Daten hinzuladen
 
-[zur Webseite](http://opendem.info/client/LuftdatenInfoTimeslidert.html)
+[zur Webseite](http://opendem.info/client/LuftdatenInfoTimeslider.html)
