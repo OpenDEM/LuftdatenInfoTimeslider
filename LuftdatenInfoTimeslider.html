@@ -6,18 +6,39 @@
 <title>LuftdatenInfo Timeslider</title>
     <link rel="stylesheet" href="http://openlayers.org/en/v3.3.0/css/ol.css" type="text/css">
     <style>
-      .map {
+      
+	  html,body {
+    height:100%;
+    padding:0;
+    margin:0;
+}
+	  
+	  #map1 .ol-attribution {
+	  bottom: 30px;
+	  }
+	  
+	  #map2 .ol-attribution {
+	  bottom: 30px;
+	  }
+	  
+	  .map {
         height: 40%;
         width: 100%;
       }
 	  
+	  
 	  .divT{
 	  background-color: white;
 	  height: 30px;
+	  position: relative;
 	  }
  .half-map {
   float: left;
-  height:  calc(50% - 100px);
+      height: -moz-calc(50% - 100px);
+    height: -webkit-calc(50% - 100px);
+    height: calc(50% - 100px);
+  
+  
   width: 49%;
   background-color: #b5d0d0;
   border: solid 1px black;
@@ -40,20 +61,68 @@ input[type=number]{
  background-color: rgba(0, 60, 136, 0.298039);
  padding: 5px;
  border-radius: 4px;}
+ 
+ 
+ .helpDivS{
+		 position: absolute;
+		 top: 5px;
+		 left: 450px;
+		 z-index: 9999;
+}
+
+    #helpDiv { z-index:1;
+  position: absolute;
+  width: 650px;
+  height: 500px;
+  background-color: white;
+  top: 80px;
+  overflow: auto;
+  left: 20px;
+          border: 3px solid black;
+	      padding: 5px;
+  
+ } 
+ 
+ .downloadDivS{
+		 position: absolute;
+		 top: 1px;
+		 left: 520px;
+		 z-index: 9999;
+}
+
+    #downloadDiv { z-index:1;
+  position: absolute;
+  width: 650px;
+  height: 500px;
+  background-color: white;
+  top: 80px;
+  overflow: auto;
+  left: 20px;
+          border: 3px solid black;
+	      padding: 5px;
+  
+ } 
+ 
+ .left{
+ left: 15px;
+ position: relative;
+ }
     </style>
     <script src="http://openlayers.org/en/v3.3.0/build/ol-debug.js" type="text/javascript"></script>
     <title>SensorMap</title>
   </head>
   <body>
   
-    <h2>Test! Stündliche Daten von <a href="http://luftdaten.info/" target="_blank">LuftDaten.info </a></h2>
-	<p>    <div role="group" aria-label="Animation controls">
+    <h2>&nbsp;&nbsp;Test! Stündliche Daten von <a href="http://luftdaten.info/" target="_blank">LuftDaten.info </a></h2>
+	<div class="helpDivS" id="helpDivS"><img id="help" onclick="helpMe()" src="images/help.png"></div>
+	<div class="downloadDivS" id="downloadDivS"><img id="download" onclick="downloadMe()" src="images/download.png"></div>
+	<p><div class="left" role="group" aria-label="Animation controls">
       <button id="play" type="button">Play</button>
       <button id="pause" type="button">Pause</button>
       <span id="info"></span>
     </div></p>
     <div id="map1" class="half-map">
-	<div class="divT">PM 10: 
+	<div class="divT">&nbsp;&nbsp;PM 10: 
 	<label for="pm10_1">Schwellenwert 1:</label>
 <input id="pm10_1" type="number" name="pm10_1" value="15" maxlength="4" size="4">
 <label for="pm10_2">Schwellenwert 2:</label>
@@ -61,7 +130,7 @@ input[type=number]{
 <button type="button" name="reload1" id="reload1">Neu laden</button>
 	</div></div>
     <div id="map2" class="half-map">
-	<div class="divT">PM 2,5:
+	<div class="divT">&nbsp;&nbsp;PM 2,5:
 	<label for="pm25_1">Schwellenwert 1:</label>
 <input id="pm25_1" type="number" name="pm25_1" value="5">
 <label for="pm25_2">Schwellenwert 2:</label>
@@ -69,7 +138,7 @@ input[type=number]{
 <button type="button" name="reload2" id="reload2">Neu laden</button>
 	</div></div>
     <div id="map3" class="half-map">
-	<div class="divT">Temperatur:
+	<div class="divT">&nbsp;&nbsp;Temperatur:
 	<label for="temp_1">Schwellenwert 1:</label>
 <input id="temp_1" type="number" name="temp_1" value="6">
 <label for="temp_2">Schwellenwert 2:</label>
@@ -77,7 +146,7 @@ input[type=number]{
 <button type="button" name="reload3" id="reload3">Neu laden</button>
 </div></div>
     <div id="map4" class="half-map">
-	<div class="divT">Relative Luftfeuchtigkeit:
+	<div class="divT">&nbsp;&nbsp;Relative Luftfeuchtigkeit:
 	<label for="humi_1">Schwellenwert 1:</label>
 <input id="humi_1" type="number" name="humi_1" value="75">
 <label for="humi_2">Schwellenwert 2:</label>
@@ -85,6 +154,16 @@ input[type=number]{
 <button type="button" name="reload4" id="reload4">Neu laden</button>
 </div></div>
 	<div id="mouse-position" class="mouse-position"></div> 
+	
+		<div id="helpDiv" style="display:none;"> 
+<h1>Hilfe</h1>
+<p>todo</p>
+</div>
+	
+			<div id="downloadDiv" style="display:none;"> 
+<h1>Download</h1>
+<p>todo</p>
+</div>
     <script type="text/javascript">
 	
 	
@@ -373,6 +452,46 @@ var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescripto
 
       var stopButton = document.getElementById('pause');
       stopButton.addEventListener('click', stop, false);
+	  
+	  	function helpMe(){
+
+var helpDiv = document.getElementById("helpDiv");
+       if(helpDiv.style.display == 'block'){
+	   
+          helpDiv.style.display = 'none';
+	   } else {
+	      helpDiv.style.display = 'block';}
+
+var help = document.getElementById("help");
+       if(help.style.border === "2px solid red"){
+	   
+	   help.style.border = "0px solid red"
+         
+	   } else {
+	     help.style.border = "2px solid red"}
+		  
+		  
+}
+
+	  	function downloadMe(){
+
+var downloadDiv = document.getElementById("downloadDiv");
+       if(downloadDiv.style.display == 'block'){
+	   
+          downloadDiv.style.display = 'none';
+	   } else {
+	      downloadDiv.style.display = 'block';}
+
+var download = document.getElementById("download");
+       if(download.style.border === "2px solid red"){
+	   
+	   download.style.border = "0px solid red"
+         
+	   } else {
+	     download.style.border = "2px solid red"}
+		  
+		  
+}
 	  
     </script>
   </body>
