@@ -12,6 +12,56 @@
     padding:0;
     margin:0;
 }
+
+ .ol-popup {
+            position: absolute;
+            background-color: white;
+            -webkit-filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.2));
+            filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.2));
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #cccccc;
+            bottom: 12px;
+            left: -50px;
+            min-width: 280px;
+        }
+
+        .ol-popup:after,
+        .ol-popup:before {
+            top: 100%;
+            border: solid transparent;
+            content: " ";
+            height: 0;
+            width: 0;
+            position: absolute;
+            pointer-events: none;
+        }
+
+        .ol-popup:after {
+            border-top-color: white;
+            border-width: 10px;
+            left: 48px;
+            margin-left: -10px;
+        }
+
+        .ol-popup:before {
+            border-top-color: #cccccc;
+            border-width: 11px;
+            left: 48px;
+            margin-left: -11px;
+        }
+
+        .ol-popup-closer {
+            text-decoration: none;
+            position: absolute;
+            top: 2px;
+            right: 8px;
+        }
+
+        .ol-popup-closer:after {
+            content: "X";
+        }
+
 	  
 	  #map1 .ol-attribution {
 	  bottom: 30px;
@@ -37,16 +87,19 @@
       height: -moz-calc(50% - 100px);
     height: -webkit-calc(50% - 100px);
     height: calc(50% - 100px);
-  
-  
   width: 49%;
   background-color: #b5d0d0;
   border: solid 1px black;
 }
 
 input[type=number]{
-    width: 30px;
+    width: 30px;	
 } 
+
+.inputNumF{
+    width: 50px!important;	
+}
+
  .half-map2 {
   height: calc(50% - 100px);
   width: 50%;
@@ -70,7 +123,7 @@ input[type=number]{
 		 z-index: 9999;
 }
 
-    #helpDiv { z-index:1;
+    #helpDiv { z-index:9999;
   position: absolute;
   width: 650px;
   height: 500px;
@@ -119,7 +172,10 @@ input[type=number]{
 	<p><div class="left" role="group" aria-label="Animation controls">
       <button id="play" type="button">Play</button>
       <button id="pause" type="button">Pause</button>
-      <span id="info"></span>
+      <!-- 7 * 24 Stunden -->
+	  <input type="range" id="range" name="range" min="1" max="168" value="1">
+	  Geschwindigkeit <input class="inputNumF" type="number" id="framerate" name="framerate" min="1" value="300"> 
+	  <span id="info"></span>
     </div></p>
     <div id="map1" class="half-map">
 	<div class="divT">&nbsp;&nbsp;PM 10: 
@@ -157,18 +213,60 @@ input[type=number]{
 	
 		<div id="helpDiv" style="display:none;"> 
 <h1>Hilfe</h1>
-<p>todo</p>
+<p>Die Daten von LuftDaten.info werden stündlich in eine PostGIS Datenbank gespielt.</p>
+<p>Die API Abfrage liefert den Durchschnitt aller gemessenen Sensorenwerte der letzten 5 Minuten.</p>
+<a href="https://github.com/opendata-stuttgart/meta/wiki/APIs" target="_blank">zu den OpenData Stuttgart APIs</a>
+<p> Es werden nur die Daten der letzten Woche vorgehalten.</p>
+<p>Die Daten stehen unter der Database Contents License (<a href="https://opendatacommons.org/licenses/dbcl/1.0/" target="_blank">DbCL</a>) v1.0</p>
+<a href="https://github.com/OpenDEM/LuftdatenInfoTimeslider" target="_blank">GitHub</a>
+<p>Die zum Download angebotenen Daten werden ebenfalls stündlich extrahiert und entsprechen den hier sichtbaren Daten (mit einer Zeitverzögerung von ca. 10 Minuten).</p>
+<p>Die Schwellenwerte können angepasst werden:</p>
+<p>Grün < Schwellenwert 1 >= Gelb =< Schwellenwert 2 < Rot</p>
+<p>In die PM10 Karte klicken um die Messwerte abzufragen.</p>
 </div>
 	
 			<div id="downloadDiv" style="display:none;"> 
 <h1>Download</h1>
+<div id="popup" class="ol-popup">
+        <a href="#" id="popup-closer" class="ol-popup-closer"></a>
+        <div id="popup-content"></div>
+    </div>
 <p>todo</p>
 </div>
     <script type="text/javascript">
 	
+	var playActive = false;
 	
-	
-	
+	/**
+         * Elements that make up the popup.
+         */
+        var container = document.getElementById('popup');
+        var content = document.getElementById('popup-content');
+        var closer = document.getElementById('popup-closer');
+
+        /**
+         * Create an overlay to anchor the popup to the map.
+         */
+        var overlay = new ol.Overlay({
+            element: container,
+            autoPan: true,
+            autoPanAnimation: {
+                duration: 250
+            }
+        });
+
+        /**
+         * Add a click handler to hide the popup.
+         * @return {boolean} Don't follow the href.
+         */
+        closer.onclick = function() {
+            overlay.setPosition(undefined);
+            closer.blur();
+            return false;
+        };
+		
+		
+		
 	// zuerst das datum setzen auf volle stunde
 	//todo
 	   function hoursAgo() {
@@ -209,30 +307,69 @@ if (_date < 10){_date = "0"+_date;}
 var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 	var timestamp = datum + ' '+ hours+':00:00';
 	console.log(timestamp);
+	//TIME=2018-05-10T13:00:00.0Z
+	var ogctime = datum + 'T'+ hours+':00:00.0Z';
 	var iniDate = true;
+	// anders ???
+	var initDateTime = new Date(startDate.valueOf() + startDate.getTimezoneOffset() * 60000);;
+	console.log(initDateTime);
+	
+	// set minimumm Date - 1 Week
+	var minDate = new Date();    
+    minDate.setDate(minDate.getDate() - 7);
+	minDate.setMinutes(0);
+	minDate.setSeconds(0);
+    var gmtDateIni = new Date(minDate.valueOf() + minDate.getTimezoneOffset() * 60000);	
+		var hours = gmtDateIni.getHours();
+	if (hours < 10){hours = "0"+hours;}
+var month = gmtDateIni.getMonth() + 1;
+if (month < 10){month = "0"+month;}
+var _date = gmtDateIni.getDate();
+if (_date < 10){_date = "0"+_date;}
+
+var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
+	var minDate = datum + ' '+ hours+':00:00';
+	//console.log(minDate);
+
+// set array for matching int to time
+	var rangeA = [];
+	var rangeTime = new Date();
+	rangeTime.setMinutes(0);
+    rangeTime.setSeconds(0);
+	for (i = 1; i < 168; i++) {
+	rangeA.push(rangeTime);
+    
+	var timeR = rangeTime.getTime()
+timeR = timeR - 3600*1000;
+rangeTime = new Date(timeR);
+	
+	/*
+	var expdate = futdate.getTime()
+expdate += 3600*1000 //expires in 1 hour(milliseconds) 
+futdate.setTime(expdate) */
+} 
+	
+	
 	var frameRate = 0.5; // frames per second
       var animationId = null;
 
-	  
-    //	pm10
-    // ori
-//	var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	
 	// pm 10
-	var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+	var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	// pm 2,5
-	var sldBody2 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+    var sldBody2 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
     //temp
-	var sldBody3 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+	 var sldBody3 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	// humidity
-	var sldBody4 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+	var sldBody4 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	
 	var layer1 = new ol.layer.Image({
     title: 'tracks',
 		source: new ol.source.ImageWMS({url: 'http://www.opendem.info:8080/geoserver/opendem/wms',
 	  attributions: [new ol.Attribution({html: "<br/><a href=\"http://luftdaten.info\">LuftDaten.info</a>"})],
 	  params: {'LAYERS': 'opendem:luftdateninfo',
-		  'SLD_BODY' : sldBody1},
+		  'SLD_BODY' : sldBody1,
+		  'TIME' : ogctime },
 		  serverType: 'geoserver'})
     });	
 	
@@ -241,7 +378,8 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 		source: new ol.source.ImageWMS({url: 'http://www.opendem.info:8080/geoserver/opendem/wms',
 	  attributions: [new ol.Attribution({html: "<br/><a href=\"http://luftdaten.info\">LuftDaten.info</a>"})],
 	  params: {'LAYERS': 'opendem:luftdateninfo',
-		  'SLD_BODY' : sldBody2},
+		  'SLD_BODY' : sldBody2,
+		  'TIME' : ogctime },
 		  serverType: 'geoserver'})
     });	
 	
@@ -250,7 +388,8 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 		source: new ol.source.ImageWMS({url: 'http://www.opendem.info:8080/geoserver/opendem/wms',
 	  attributions: [new ol.Attribution({html: "<br/><a href=\"http://luftdaten.info\">LuftDaten.info</a>"})],
 	  params: {'LAYERS': 'opendem:luftdateninfo',
-		  'SLD_BODY' : sldBody3},
+		  'SLD_BODY' : sldBody3,
+		  'TIME' : ogctime },
 		  serverType: 'geoserver'})
     });	
 	
@@ -259,7 +398,8 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 		source: new ol.source.ImageWMS({url: 'http://www.opendem.info:8080/geoserver/opendem/wms',
 	  attributions: [new ol.Attribution({html: "<br/><a href=\"http://luftdaten.info\">LuftDaten.info</a>"})],
 	  params: {'LAYERS': 'opendem:luftdateninfo',
-		  'SLD_BODY' : sldBody4},
+		  'SLD_BODY' : sldBody4,
+		  'TIME' : ogctime },
 		  serverType: 'geoserver'})
     });	
 
@@ -275,6 +415,7 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 	  
       var map1 = new ol.Map({
         target: 'map1',
+		overlays: [overlay],
         layers: [layerOsm,layer1],
 		controls: ol.control.defaults({
     attributionOptions: /** @type {olx.control.AttributionOptions} */ ({
@@ -297,7 +438,7 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
       var map2 = new ol.Map({
         target: 'map2',
         layers: [layerOsm, layer2],
-        view: view
+		view: view
       });
 	  var map3 = new ol.Map({
         target: 'map3',
@@ -319,8 +460,7 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 		
     var _selector1 = document.querySelector('button[name=reload1]');
     _selector1.addEventListener('click', function (event) {
-    //var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdaten</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
-	var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+    var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	var layer1New = layer1.getSource();
 	layer1New.updateParams({'SLD_BODY': sldBody1}); 
 	map1.render();    
@@ -328,8 +468,7 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 	
 	var _selector2 = document.querySelector('button[name=reload2]');
     _selector2.addEventListener('click', function (event) {
-//var sldBody2 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdaten_20180104</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
-	var sldBody2 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+var sldBody2 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	var layer2New = layer2.getSource();
 	layer2New.updateParams({'SLD_BODY': sldBody2}); 
 	map2.render();
@@ -337,8 +476,7 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 	
 	var _selector3 = document.querySelector('button[name=reload3]');
     _selector3.addEventListener('click', function (event) {
-//  var sldBody3 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdaten_20180104</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
-	var sldBody3 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+  var sldBody3 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	var layer3New = layer3.getSource();
 	layer3New.updateParams({'SLD_BODY': sldBody3}); 
 	map3.render();
@@ -346,8 +484,7 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 	
 	var _selector4 = document.querySelector('button[name=reload4]');
     _selector4.addEventListener('click', function (event) {
- //   	var sldBody4 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdaten_20180104</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
-	var sldBody4 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+    	var sldBody4 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	var layer4New = layer4.getSource();
 	layer4New.updateParams({'SLD_BODY': sldBody4}); 
 	map4.render();
@@ -355,6 +492,7 @@ var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 });
 
 function updateMapTime(){
+
 
 
 var gmtDate = new Date(startDate.valueOf() + startDate.getTimezoneOffset() * 60000);
@@ -369,8 +507,19 @@ if (_date < 10){_date = "0"+_date;}
 
 var datum = gmtDate.getFullYear()+"-"+ month+"-"+_date;
 	var timestamp = datum + ' '+ hours+':00:00';
-	console.log(timestamp)
+	console.log(minDate + ' '+ timestamp)
+// stop after 1 week
+	if (timestamp === minDate){
+	stop();
+	console.log(initDateTime);
+	// anders
+	startDate = initDateTime;
+	updateInfo();
 	
+	}
+
+	
+	var ogctime = datum + 'T'+ hours+':00:00.0Z';
 /*	var hours = startDate.getHours();
 	if (hours < 10){hours = "0"+hours;}
 var month = startDate.getMonth() + 1;
@@ -381,24 +530,24 @@ var datum = startDate.getFullYear()+"-"+ month+"-"+_date;
 	 timestamp = datum + ' '+ hours+':00:00';
 	console.log(timestamp); */
 
-var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>p1</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm10_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	var layer1New = layer1.getSource();
-	layer1New.updateParams({'SLD_BODY': sldBody1}); 
+	layer1New.updateParams({'SLD_BODY': sldBody1, 'TIME' : ogctime}); 
 	map1.render();    
 
-	var sldBody2 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+	var sldBody2 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>p2</ogc:PropertyName><ogc:Literal>'+ document.getElementById('pm25_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	var layer2New = layer2.getSource();
-	layer2New.updateParams({'SLD_BODY': sldBody2}); 
+	layer2New.updateParams({'SLD_BODY': sldBody2, 'TIME' : ogctime}); 
 	map2.render();
 	
-		var sldBody3 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+	var sldBody3 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>temperature</ogc:PropertyName><ogc:Literal>'+ document.getElementById('temp_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	var layer3New = layer3.getSource();
-	layer3New.updateParams({'SLD_BODY': sldBody3}); 
+	layer3New.updateParams({'SLD_BODY': sldBody3, 'TIME' : ogctime}); 
 	map3.render();
 
-		var sldBody4 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsEqualTo><ogc:PropertyName>timest</ogc:PropertyName><ogc:Literal>'+ timestamp +'</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsGreaterThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+	  	var sldBody4 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescriptor version="1.1.0"  xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd"  xmlns="http://www.opengis.net/sld"  xmlns:ogc="http://www.opengis.net/ogc"  xmlns:se="http://www.opengis.net/se"  xmlns:xlink="http://www.w3.org/1999/xlink"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><NamedLayer><se:Name>opendem:luftdateninfo</se:Name><UserStyle><se:FeatureTypeStyle><se:Rule><ogc:Filter><ogc:PropertyIsLessThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsLessThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#00FF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:And><ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsLessThanOrEqualTo><ogc:PropertyIsGreaterThanOrEqualTo><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_1').value +'</ogc:Literal></ogc:PropertyIsGreaterThanOrEqualTo></ogc:And></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FFFF00</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule><se:Rule><ogc:Filter><ogc:PropertyIsGreaterThan><ogc:PropertyName>humidity</ogc:PropertyName><ogc:Literal>'+ document.getElementById('humi_2').value +'</ogc:Literal></ogc:PropertyIsGreaterThan></ogc:Filter><se:PointSymbolizer><se:Graphic><se:Mark><se:WellKnownName>circle</se:WellKnownName><se:Fill><se:SvgParameter name="fill">#FF0000</se:SvgParameter></se:Fill></se:Mark><se:Size>15</se:Size></se:Graphic></se:PointSymbolizer></se:Rule></se:FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
 	var layer4New = layer4.getSource();
-	layer4New.updateParams({'SLD_BODY': sldBody4}); 
+	layer4New.updateParams({'SLD_BODY': sldBody4, 'TIME' : ogctime}); 
 	map4.render();
 	
     }
@@ -423,28 +572,59 @@ var sldBody1 = '<?xml version="1.0" encoding="ISO-8859-1"?><StyledLayerDescripto
 	  } else {
         startDate.setHours(startDate.getHours() - 1);
 		updateInfo();
+		
+		// coordinate with range input
+		// wieso nicht?
+		//var valueR = rangeA.indexOf(startDate);
+		var valueR;
+		for (i = 0; i < rangeA.length; i++) {
+		
+    if (rangeA[i] == startDate.toString()){
+	valueR = i + 1;
+	
+	}
+	
+} 
+		console.log('startDate', startDate);
+		console.log('startArra', rangeA[1]);
+		console.log(valueR);
+		
+		document.getElementById("range").value = valueR; 
+		
 		updateMapTime();
 		}
       /*  if (startDate > Date.now()) {
           startDate = hoursAgo();
         } */
         //layers[1].getSource().updateParams({'TIME': startDate.toISOString()});
-	
-       
 	  
       }
       setTime();
 
       var stop = function() {
-        if (animationId !== null) {
+	  
+	  var startButton = document.getElementById('play');
+		
+	   if (playActive === true){
+		 startButton.style.background = 'red';
+		 playActive = false;
+		 }  else {
+		 	 startButton.style.background = '';} 
+			 
+	 
+	 if (animationId !== null) {
           window.clearInterval(animationId);
           animationId = null;
-        }
+        } 
       };
 
       var play = function() {
-        stop();
-        animationId = window.setInterval(setTime, 1000 / frameRate);
+	  playActive = true;
+	    stop();
+        //animationId = window.setInterval(setTime, 1000 / frameRate);
+		    //animationId = window.setInterval(setTime, 5 / frameRate);
+			 var frameR = document.getElementById('framerate').value;
+			 animationId = window.setInterval(setTime, Number(frameR) / frameRate);
       };
 
       var startButton = document.getElementById('play');
@@ -474,6 +654,17 @@ var help = document.getElementById("help");
 }
 
 	  	function downloadMe(){
+		
+		x = confirm('Download Daten.\nDie Sensordaten stammen von luftdaten.info und stehen unter der Database Contents License (DbCL) v1.0.'); 
+if (x == true)
+{
+window.open("http://www.opendem.info/downloads/luftdateninfo.tar");
+}
+else
+{
+//alert("You have clicked on Cancel Button.");
+ } 
+/*
 
 var downloadDiv = document.getElementById("downloadDiv");
        if(downloadDiv.style.display == 'block'){
@@ -488,10 +679,66 @@ var download = document.getElementById("download");
 	   download.style.border = "0px solid red"
          
 	   } else {
-	     download.style.border = "2px solid red"}
+	     download.style.border = "2px solid red"}*/
 		  
 		  
 }
+
+//range.oninput = function() {
+range.onmouseup = function() {
+
+// 
+    console.log(this.value + ' time '+ rangeA[this.value]);
+	startDate = rangeA[this.value];
+	updateInfo();
+	updateMapTime();
+	
+} 
+
+map1.on('singleclick', function(evt) {
+var coordinate = evt.coordinate;
+                var hdms = ol.coordinate.toStringHDMS(ol.proj.transform(
+                    coordinate, 'EPSG:3857', 'EPSG:4326'));
+        var viewResolution =  (map1.getView().getResolution());
+        var url = layer1.getSource().getGetFeatureInfoUrl(
+            evt.coordinate, viewResolution, 'EPSG:3857',
+			{'INFO_FORMAT': 'application/json',
+			'FEATURE_COUNT' : 3 });
+        if (url) {
+		var createCORSRequest = function(method, url) {
+  var xhr = new XMLHttpRequest();
+  if ("withCredentials" in xhr) {
+    // Most browsers.
+    xhr.open(method, url, true);
+  } else if (typeof XDomainRequest != "undefined") {
+    // IE8 & IE9
+    xhr = new XDomainRequest();
+    xhr.open(method, url);
+  } else {
+    // CORS not supported.
+    xhr = null;
+  }
+  return xhr;
+};
+var method = 'GET';
+var xhr = createCORSRequest(method, url);
+xhr.onload = function() {
+  var jsonFI = JSON.parse(this.responseText);
+ var contentAir = '<p>Gemessene Werte '+ jsonFI.features[0].properties.timest +':<br/>';
+                             contentAir += 'PM 10: '+jsonFI.features[0].properties.p1 +'<br/>';
+							 contentAir += 'PM 2.5: '+jsonFI.features[0].properties.p2 +'<br/>';
+							 contentAir += 'Temperatur: '+jsonFI.features[0].properties.temperature+'<br/>';
+							 contentAir += 'Luftfeuchtigkeit: '+jsonFI.features[0].properties.humidity +'</p>';
+                            content.innerHTML = contentAir;
+                            overlay.setPosition(coordinate);
+};
+xhr.onerror = function() {
+  // Error code goes here.
+};
+xhr.send();
+        }
+      });
+	 
 	  
     </script>
   </body>
