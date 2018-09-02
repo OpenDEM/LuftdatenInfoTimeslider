@@ -5,11 +5,11 @@ Es werden nur die Daten der letzten Woche vorgehalten.
 TODOS
 
 * Code reorganisieren
-* Hochziehen auf OpenLayers5 solbald verfügbar
-* Parametrisierter Aufruf von Koordinaten und Zoom Level
+* Hochziehen auf OpenLayers5
 * Weitere Funktionen hinzufügen
   * Überschreitung von Werten pro Tag
   * Überschreitung von Werten pro Woche
   * Eigene Daten hinzuladen
+  * Darstellung von interpolierten Flächen
 
-[zur Webseite](http://opendem.info/client/LuftdatenInfoTimeslider.html)
+[zur Webseite](http://www.openmaps.online/LuftdatenInfoTimeslider/)
