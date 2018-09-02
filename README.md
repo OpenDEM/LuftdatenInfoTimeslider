@@ -9,6 +9,7 @@ TODOS
 * Weitere Funktionen hinzufügen
   * Überschreitung von Werten pro Tag
   * Überschreitung von Werten pro Woche
+  * Hinzufügen von LANUV Daten
   * Eigene Daten hinzuladen
   * Darstellung von interpolierten Flächen
 
