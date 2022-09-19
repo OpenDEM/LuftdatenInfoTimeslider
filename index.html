@@ -518,7 +518,7 @@ Bitte bei den kleinen Zoomstufen entsprechend hohe Werte für die Geschwindigkei
         });
 
         var layerOsm = new ol.layer.Tile({
-            source: new ol.source.OSM()
+            source: new ol.source.OSM({url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png'})
         });
 
 
